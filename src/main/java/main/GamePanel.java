@@ -7,7 +7,6 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.awt.event.KeyEvent;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;

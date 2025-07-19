@@ -1,4 +1,4 @@
-package main;
+package utils;
 
 public class Constants {
     // Centralizziamo i nomi dei file e altre costanti globali qui.

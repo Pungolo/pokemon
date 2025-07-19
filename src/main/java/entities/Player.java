@@ -3,7 +3,7 @@ package entities;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 
-import main.Constants;
+import utils.Constants;
 import utils.SpriteLoader;
 
 public class Player {

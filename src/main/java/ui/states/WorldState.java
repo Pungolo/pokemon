@@ -5,12 +5,9 @@ import java.awt.event.KeyEvent;
 
 import engine.InputHandler;
 import entities.Player;
-import entities.Pokemon;
 import main.GamePanel;
 import main.GameState;
 import world.WorldMap;
-
-import battle.BattleManager;
 
 
 public class WorldState implements IGameState {
