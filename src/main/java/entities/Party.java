@@ -69,7 +69,7 @@ public class Party {
 
     public void loadFromFile() {
         this.pokemonList.clear();
-        try (BufferedReader reader = new BufferedReader(new FileReader("src/assets/saves/" + this.saveFileName))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("src/main/resources/assets/saves/" + this.saveFileName))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split(",");
@@ -95,7 +95,7 @@ public class Party {
 
     public boolean saveToFile() {
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter("src/assets/saves/" + this.saveFileName))) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter("src/main/resources/assets/saves/" + this.saveFileName))) {
             for (Pokemon p : this.pokemonList) {
                 String line = String.join(",",
                     p.getName(),
