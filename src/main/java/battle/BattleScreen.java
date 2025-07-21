@@ -13,9 +13,6 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 
 public class BattleScreen extends JPanel {
-    /**
-     *
-     */
     private static final long serialVersionUID = 1L;
     private final Battle battle;
     private final String[] menu = {"Attacca", "Fuggi", "Cattura"};
@@ -33,14 +30,13 @@ public class BattleScreen extends JPanel {
     private int captureStep = 0;
     private long captureTimer = 0;
 
-
     private GameWindow parent;
     private GamePanel parentPanel;
-
 
     private boolean hidePokemon = false;
     private boolean hideEnemyPokemon = false;
 
+    private BattleEndListener battleEndListener;
 
     public BattleScreen(Pokemon playerPokemon, Pokemon enemyPokemon, GameWindow parent, GamePanel parentPanel, Player player) {
         this.battle = new Battle(playerPokemon, enemyPokemon);
@@ -70,40 +66,39 @@ public class BattleScreen extends JPanel {
         timer.start();
     }
 
+    public void setOnBattleEnd(BattleEndListener listener) {
+        this.battleEndListener = listener;
+    }
+
     private void setupInput() {
         getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("UP"), "up");
         getActionMap().put("up", new AbstractAction() {
-            /**
-             *
-             */
             private static final long serialVersionUID = 1L;
 
             @Override
             public void actionPerformed(ActionEvent e) {
-                selected = (selected - 1 + menu.length) % menu.length;
-                repaint();
+                if (!battleOver) {
+                    selected = (selected - 1 + menu.length) % menu.length;
+                    repaint();
+                }
             }
         });
 
         getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("DOWN"), "down");
         getActionMap().put("down", new AbstractAction() {
-            /**
-             *
-             */
             private static final long serialVersionUID = 1L;
 
             @Override
             public void actionPerformed(ActionEvent e) {
-                selected = (selected + 1) % menu.length;
-                repaint();
+                if (!battleOver) {
+                    selected = (selected + 1) % menu.length;
+                    repaint();
+                }
             }
         });
 
         getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("ENTER"), "enter");
         getActionMap().put("enter", new AbstractAction() {
-            /**
-             *
-             */
             private static final long serialVersionUID = 1L;
 
             @Override
@@ -115,7 +110,6 @@ public class BattleScreen extends JPanel {
                 }
             }
         });
-
     }
 
     private void saveParty() {
@@ -147,10 +141,10 @@ public class BattleScreen extends JPanel {
                 endMessage = "Hai sconfitto " + battle.getEnemyPokemon().getName() + "!";
                 battleOver = true;
             }
-        } else if (selected == 1) {
+        } else if (selected == 1) { // Fuggi
             endMessage = "Sei fuggito!";
             battleOver = true;
-        } else if (selected == 2) {
+        } else if (selected == 2) { // Cattura
             capturing = true;
             captureStep = 0;
             captureTimer = System.currentTimeMillis();
@@ -159,7 +153,6 @@ public class BattleScreen extends JPanel {
 
         repaint();
     }
-
 
     private void updateCaptureAnimation(Graphics2D g2d) {
         long now = System.currentTimeMillis();
@@ -177,7 +170,6 @@ public class BattleScreen extends JPanel {
             case 2 -> handleCaptureResult(g2d, now, pokeballX, pokeballY);
         }
     }
-
 
     private void handleTrainerThrow(Graphics2D g2d, long now, int x, int y, int width, int height) {
         int frameIndex = (int) ((now - captureTimer) / 150) % trainerThrowSprites.length;
@@ -225,21 +217,31 @@ public class BattleScreen extends JPanel {
         captureTimer = now;
     }
 
-
     private void returnToGame() {
-
         saveParty();
+
+        BattleResult result;
+
+        if (endMessage.contains("fuggito")) {
+            result = BattleResult.FLEE;
+        } else if (endMessage.contains("catturato") || endMessage.contains("sconfitto")) {
+            result = BattleResult.WIN;
+        } else {
+            result = BattleResult.LOSE;
+        }
+
+        if (battleEndListener != null) {
+            battleEndListener.onBattleEnd(result);
+        }
 
         parentPanel.setInBattle(false);
         parentPanel.resetInput();
         parent.setContentPane(parentPanel);
         parent.revalidate();
         parent.repaint();
-        SwingUtilities.invokeLater(() -> {
-            parentPanel.requestFocusInWindow();
-        });
-        parentPanel.startGameLoop();
 
+        SwingUtilities.invokeLater(parentPanel::requestFocusInWindow);
+        parentPanel.startGameLoop();
     }
 
     @Override
@@ -314,7 +316,7 @@ public class BattleScreen extends JPanel {
         int boxX = playerX;
         int boxY = playerY - boxHeight - 20;
 
-        drawInfoBox(g2d, boxX, boxY, boxWidth, boxHeight, player.getName(), player.getLevel(), player.getCurrentHp(), player.getMaxHp(), Color.GREEN);
+        drawInfoBox(g2d, boxX, boxY, boxWidth, boxHeight, player.getName(), player.getLevel(), player.getCurrentHp(), player.getMaxHp(), getHpColor(player.getCurrentHp() / (float) player.getMaxHp()));
     }
 
     private void drawInfoBox(Graphics2D g2d, int x, int y, int width, int height, String name, int level, int currentHp, int maxHp, Color hpColor) {
@@ -332,6 +334,12 @@ public class BattleScreen extends JPanel {
         g2d.fillRect(x + 10, y + 40, hpWidth, 15);
         g2d.setColor(Color.BLACK);
         g2d.drawRect(x + 10, y + 40, maxBarWidth, 15);
+    }
+
+    private Color getHpColor(float ratio) {
+        if (ratio > 0.5f) return Color.GREEN;
+        else if (ratio > 0.2f) return Color.ORANGE;
+        else return Color.RED;
     }
 
     private void drawCommandBox(Graphics2D g2d) {
@@ -360,17 +368,14 @@ public class BattleScreen extends JPanel {
         int boxY = getHeight() / 2 - 60;
 
         g2d.setColor(new Color(0, 0, 0, 200));
-        g2d.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 20, 20);
+        g2d.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 10, 10);
 
         g2d.setColor(Color.WHITE);
-        g2d.setFont(new Font("Arial", Font.BOLD, 20));
+        g2d.setFont(new Font("Arial", Font.BOLD, 28));
         FontMetrics fm = g2d.getFontMetrics();
         int textWidth = fm.stringWidth(endMessage);
-        g2d.drawString(endMessage, (getWidth() - textWidth) / 2, getHeight() / 2 + 5);
-
-        g2d.setFont(new Font("Arial", Font.PLAIN, 14));
-        g2d.drawString("Premi INVIO per continuare...", getWidth() / 2 - 100, getHeight() / 2 + 30);
+        int textX = boxX + (boxWidth - textWidth) / 2;
+        int textY = boxY + boxHeight / 2 + fm.getAscent() / 2;
+        g2d.drawString(endMessage, textX, textY);
     }
-
-
 }

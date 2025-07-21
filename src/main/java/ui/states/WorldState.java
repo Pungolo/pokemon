@@ -5,7 +5,7 @@ import java.awt.event.KeyEvent;
 
 import engine.InputHandler;
 import entities.Player;
-import lombok.extern.slf4j.Slf4j;
+
 import main.GamePanel;
 import main.GameState;
 import ui.states.enums.DirectionKey;
@@ -13,7 +13,6 @@ import world.WorldMap;
 
 import java.util.Random;
 
-@Slf4j
 public class WorldState implements IGameState {
 
     private static final double ENCOUNTER_PROBABILITY = 0.1; // 10% possibilità di incontro
@@ -65,27 +64,37 @@ public class WorldState implements IGameState {
             }
         }
 
-        if (wantsToMove && now - player.getLastMoveTime() >= player.getMoveCooldown()) {
-            int newX = player.x + dx;
-            int newY = player.y + dy;
 
-            if (worldMap.isWalkable(newX, newY)) {
-                player.move(dx, dy);
-                player.setLastMoveTime(now);
+        if (!wantsToMove || !canMove(now)) return false;
 
-                if (worldMap.isGrassTile(player.x, player.y)) {
-                    if (randomEncounter()) {
-                        panel.goToBattle(now); // Cambia stato
-                        return true;
-                    }
-                }
+        int newX = player.x + dx;
+        int newY = player.y + dy;
 
-                return true;
-            }
+        if (!worldMap.isWalkable(newX, newY)) return false;
+
+        performMove(dx, dy, now);
+
+        if (shouldTriggerBattle(player.x, player.y)) {
+            panel.goToBattle(now);
+            return true;
         }
 
-        return false;
+        return true;
     }
+
+    private boolean canMove(long now) {
+        return now - player.getLastMoveTime() >= player.getMoveCooldown();
+    }
+
+    private void performMove(int dx, int dy, long now) {
+        player.move(dx, dy);
+        player.setLastMoveTime(now);
+    }
+
+    private boolean shouldTriggerBattle(int x, int y) {
+        return worldMap.isGrassTile(x, y) && randomEncounter();
+    }
+
 
     private boolean randomEncounter() {
         return random.nextDouble() < ENCOUNTER_PROBABILITY;
@@ -98,14 +107,14 @@ public class WorldState implements IGameState {
 
     @Override
     public void onEnter() {
-        log.info("Entrando in WorldState...");
+        System.out.println("Entrando in WorldState...");
         // TODO: Riattivare musica del mondo
         // AudioManager.play("overworld_theme");
     }
 
     @Override
     public void onExit() {
-        log.info("Uscendo da WorldState...");
+        System.out.println("Uscendo da WorldState...");
         // TODO: Fermare musica del mondo
         // AudioManager.stop("overworld_theme");
     }

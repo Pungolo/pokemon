@@ -9,6 +9,7 @@ main\GameState.class
 world\WorldMap.class
 utils\SpriteLoader.class
 world\Tile.class
+ui\states\enums\DirectionKey.class
 battle\BattleScreen$1.class
 engine\InputHandler.class
 ui\states\SettingsMenuState.class

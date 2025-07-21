@@ -1,27 +1,26 @@
 package ui.states;
 
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics2D;
+import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.util.List;
 
 import engine.InputHandler;
+import engine.LocalizationManager;
 import entities.Player;
 import entities.Pokemon;
+
 import main.GamePanel;
 import main.GameState;
-import engine.LocalizationManager;
+
 
 public class PartyScreenState implements IGameState {
 
-    private Player player;
+    private final Player player;
     private int selectedIndex = 0;
-    private int swapIndex = -1; // -1 significa che non stiamo scambiando nulla
+    private int swapIndex = -1; // -1 = nessuno in scambio
 
     private long lastNavTime = 0;
-    private final long navCooldown = 150;
+    private static final long NAV_COOLDOWN = 150;
 
     public PartyScreenState(Player player) {
         this.player = player;
@@ -29,8 +28,8 @@ public class PartyScreenState implements IGameState {
 
     @Override
     public void onEnter() {
-        this.selectedIndex = 0;
-        this.swapIndex = -1; // Resetta tutto quando si apre la schermata
+        selectedIndex = 0;
+        swapIndex = -1;
         System.out.println("Entrando in PartyScreenState...");
     }
 
@@ -39,45 +38,47 @@ public class PartyScreenState implements IGameState {
         InputHandler input = panel.getInput();
         long now = System.currentTimeMillis();
 
-        // Uscita dalla schermata
+        if (handleExit(input, panel, now)) return;
+
+        handleNavigation(input, now);
+        handleSelection(input);
+    }
+
+    private boolean handleExit(InputHandler input, GamePanel panel, long now) {
         if (input.isPressed(KeyEvent.VK_X) || input.isPressed(KeyEvent.VK_ESCAPE)) {
             if (swapIndex != -1) {
-                swapIndex = -1; // Se stiamo scambiando, 'X' annulla lo scambio
+                swapIndex = -1; // Annulla scambio
                 input.reset();
-            } else {
-                 if (now - panel.getLastMenuToggleTime() > panel.getMenuToggleCooldown()) {
-                    panel.changeState(GameState.WORLD);
-                }
+            } else if (now - panel.getLastMenuToggleTime() > panel.getMenuToggleCooldown()) {
+                panel.changeState(GameState.WORLD);
             }
-            return;
+            return true;
         }
+        return false;
+    }
 
-        // Navigazione SU/GIÙ con cooldown
-        if (now - lastNavTime > navCooldown) {
-            if (input.isPressed(KeyEvent.VK_DOWN)) {
-                if (selectedIndex < player.getParty().getSize() - 1) {
-                    selectedIndex++;
-                    lastNavTime = now;
-                }
-            } else if (input.isPressed(KeyEvent.VK_UP)) {
-                if (selectedIndex > 0) {
-                    selectedIndex--;
-                    lastNavTime = now;
-                }
-            }
+    private void handleNavigation(InputHandler input, long now) {
+        if (now - lastNavTime < NAV_COOLDOWN) return;
+
+        int partySize = player.getParty().getSize();
+        if (input.isPressed(KeyEvent.VK_DOWN) && selectedIndex < partySize - 1) {
+            selectedIndex++;
+            lastNavTime = now;
+        } else if (input.isPressed(KeyEvent.VK_UP) && selectedIndex > 0) {
+            selectedIndex--;
+            lastNavTime = now;
         }
-        
-        // Logica di selezione e scambio con 'Z'
+    }
+
+    private void handleSelection(InputHandler input) {
         if (input.isPressed(KeyEvent.VK_Z)) {
             if (swapIndex == -1) {
-                // Iniziamo lo scambio: memorizziamo l'indice del primo Pokémon
-                swapIndex = selectedIndex;
+                swapIndex = selectedIndex; // Inizia lo scambio
             } else {
-                // Finiamo lo scambio: scambiamo il vecchio indice con quello nuovo
-                player.getParty().swap(swapIndex, selectedIndex);
-                swapIndex = -1; // Resettiamo lo stato di scambio
+                player.getParty().swap(swapIndex, selectedIndex); // Completa lo scambio
+                swapIndex = -1;
             }
-            input.reset(); // Evita doppie selezioni
+            input.reset(); // Evita input ripetuti
         }
     }
 
@@ -87,40 +88,47 @@ public class PartyScreenState implements IGameState {
 
         List<Pokemon> party = player.getParty().getPokemonList();
         g.setFont(new Font("Arial", Font.PLAIN, 18));
+        FontMetrics fm = g.getFontMetrics();
 
         for (int i = 0; i < party.size(); i++) {
-            Pokemon p = party.get(i);
-            int y = 100 + i * 50;
+            drawPokemonEntry(g, panel, party.get(i), i, fm);
+        }
 
-            // Evidenziamo il Pokémon selezionato per lo scambio (se c'è)
-            if (swapIndex != -1 && i == swapIndex) {
-                 g.setColor(new Color(255, 0, 0, 100)); // Rosso per il primo Pokémon selezionato
-                 g.fillRect(panel.getWidth() / 2 - 160, y - 22, 320, 30);
-            }
-            // Evidenziamo il Pokémon attualmente puntato dal cursore
-            else if (i == selectedIndex) {
-                g.setColor(new Color(255, 255, 0, 100)); // Giallo per la selezione corrente
-                g.fillRect(panel.getWidth() / 2 - 160, y - 22, 320, 30);
-            }
+        drawControlsHint(panel, g);
+    }
 
-            g.setColor(Color.WHITE);
-            String pokemonStatus = String.format("%s  %s%d  %s %d/%d",
+    private void drawPokemonEntry(Graphics2D g, GamePanel panel, Pokemon p, int index, FontMetrics fm) {
+        int y = 100 + index * 50;
+        int x = panel.getWidth() / 2 - 160;
+        int width = 320;
+        int height = 30;
+
+        if (swapIndex == index) {
+            g.setColor(new Color(255, 0, 0, 100));
+            g.fillRect(x, y - 22, width, height);
+        } else if (index == selectedIndex) {
+            g.setColor(new Color(255, 255, 0, 100));
+            g.fillRect(x, y - 22, width, height);
+        }
+
+        g.setColor(Color.WHITE);
+        String text = String.format("%s  %s%d  %s %d/%d",
                 p.getName(),
                 LocalizationManager.getInstance().getString("party.levelAbbr"), p.getLevel(),
                 LocalizationManager.getInstance().getString("party.hpLabel"), p.getCurrentHp(), p.getMaxHp()
-            );
-            
-            FontMetrics fm = g.getFontMetrics();
-            g.drawString(pokemonStatus, panel.getWidth() / 2 - fm.stringWidth(pokemonStatus) / 2, y);
-        }
-        
-        g.setColor(Color.GRAY);
-        g.setFont(new Font("Arial", Font.PLAIN, 14));
-        String controls = LocalizationManager.getInstance().getString("party.controls");
-        FontMetrics fmControls = g.getFontMetrics();
-        g.drawString(controls, panel.getWidth() / 2 - fmControls.stringWidth(controls) / 2, panel.getHeight() - 40);
+        );
+
+        g.drawString(text, panel.getWidth() / 2 - fm.stringWidth(text) / 2, y);
     }
-    
+
+    private void drawControlsHint(GamePanel panel, Graphics2D g) {
+        String controls = LocalizationManager.getInstance().getString("party.controls");
+        g.setFont(new Font("Arial", Font.PLAIN, 14));
+        FontMetrics fm = g.getFontMetrics();
+        g.setColor(Color.GRAY);
+        g.drawString(controls, panel.getWidth() / 2 - fm.stringWidth(controls) / 2, panel.getHeight() - 40);
+    }
+
     private void drawMenuBackground(GamePanel panel, Graphics2D g) {
         float borderPercentage = 0.10f;
         int borderX = (int) (panel.getWidth() * borderPercentage);
@@ -132,7 +140,7 @@ public class PartyScreenState implements IGameState {
         g.fillRect(borderX, borderY, menuWidth, menuHeight);
         g.setColor(Color.WHITE);
         g.drawRect(borderX, borderY, menuWidth, menuHeight);
-        
+
         String title = LocalizationManager.getInstance().getString("party.title");
         g.setFont(new Font("Arial", Font.BOLD, 20));
         FontMetrics fm = g.getFontMetrics();
