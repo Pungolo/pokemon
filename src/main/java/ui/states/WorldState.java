@@ -5,98 +5,108 @@ import java.awt.event.KeyEvent;
 
 import engine.InputHandler;
 import entities.Player;
+import lombok.extern.slf4j.Slf4j;
 import main.GamePanel;
 import main.GameState;
+import ui.states.enums.DirectionKey;
 import world.WorldMap;
 
+import java.util.Random;
 
+@Slf4j
 public class WorldState implements IGameState {
-	
-	// stato di battaglia
 
-	private static boolean inBattle = false;
+    private static final double ENCOUNTER_PROBABILITY = 0.1; // 10% possibilità di incontro
 
     private Player player;
     private WorldMap worldMap;
-    
-    // Il costruttore riceve gli oggetti del mondo con cui deve interagire.
+    private Random random;
+
     public WorldState(Player player, WorldMap worldMap) {
         this.player = player;
         this.worldMap = worldMap;
+        this.random = new Random();
     }
 
     @Override
     public void update(GamePanel panel) {
         long now = System.currentTimeMillis();
-        InputHandler input = panel.getInput(); // Otteniamo l'input handler dal GamePanel
+        InputHandler input = panel.getInput();
 
-        // --- Gestione Transizione di Stato ---
-        // Se premiamo 'X', diciamo al GamePanel di cambiare stato.
-        if (input.isPressed(KeyEvent.VK_X) && now - panel.getLastMenuToggleTime() > panel.getMenuToggleCooldown()) {
-            panel.changeState(GameState.MAIN_MENU);
-            return; // Usciamo per evitare di processare altro input in questo frame
+        handleStateTransition(panel, input, now);
+
+        if (handleMovement(input, now, panel)) {
+            player.update(); // Aggiorna l'animazione solo se si è mossi
         }
+    }
 
-        // --- Logica di Movimento (spostata da GamePanel) ---
+    private void handleStateTransition(GamePanel panel, InputHandler input, long now) {
+        if (input.isPressed(KeyEvent.VK_X) &&
+                now - panel.getLastMenuToggleTime() > panel.getMenuToggleCooldown()) {
+            panel.changeState(GameState.MAIN_MENU);
+        }
+    }
+
+    private boolean handleMovement(InputHandler input, long now, GamePanel panel) {
         boolean wantsToMove = false;
         int dx = 0, dy = 0;
 
-        if (input.isPressed(KeyEvent.VK_UP)) {
-            player.setDirection(Player.Direction.UP);
-            wantsToMove = true;
-            dx = 0; dy = -1;
-        } else if (input.isPressed(KeyEvent.VK_DOWN)) {
-            player.setDirection(Player.Direction.DOWN);
-            wantsToMove = true;
-            dx = 0; dy = 1;
-        } else if (input.isPressed(KeyEvent.VK_LEFT)) {
-            player.setDirection(Player.Direction.SIDE, true);
-            wantsToMove = true;
-            dx = -1; dy = 0;
-        } else if (input.isPressed(KeyEvent.VK_RIGHT)) {
-            player.setDirection(Player.Direction.SIDE, false);
-            wantsToMove = true;
-            dx = 1; dy = 0;
-        }
-
-		boolean mooved = false;
-        
-        // La logica di movimento effettiva, che rispetta il cooldown
-        if (wantsToMove && (now - player.getLastMoveTime() >= player.getMoveCooldown())) {
-            if (worldMap.isWalkable(player.x + dx, player.y + dy)) {
-                player.setLastMoveTime(now);
-                player.move(dx, dy);
-				mooved = true;
-                if (worldMap.isGrassTile(player.x, player.y)) { 
-                    // Logica per l'incontro con Pokémon selvatici
+        for (DirectionKey dirKey : DirectionKey.values()) {
+            if (input.isPressed(dirKey.key)) {
+                dx = dirKey.dx;
+                dy = dirKey.dy;
+                if (dirKey.side == null) {
+                    player.setDirection(dirKey.dir);
+                } else {
+                    player.setDirection(dirKey.dir, dirKey.side);
                 }
+                wantsToMove = true;
+                break;
             }
         }
 
-		if (mooved) {
+        if (wantsToMove && now - player.getLastMoveTime() >= player.getMoveCooldown()) {
+            int newX = player.x + dx;
+            int newY = player.y + dy;
 
-			panel.goToBattle(now);
-		}
-        
-        // Infine, aggiorniamo lo stato interno del giocatore (animazione)
-        player.update();
+            if (worldMap.isWalkable(newX, newY)) {
+                player.move(dx, dy);
+                player.setLastMoveTime(now);
+
+                if (worldMap.isGrassTile(player.x, player.y)) {
+                    if (randomEncounter()) {
+                        panel.goToBattle(now); // Cambia stato
+                        return true;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean randomEncounter() {
+        return random.nextDouble() < ENCOUNTER_PROBABILITY;
     }
 
     @Override
-    public void draw(GamePanel panel, Graphics2D g) { // Aggiunto il parametro GamePanel
-        // Questa classe non disegna nulla direttamente.
-        // Il GamePanel disegnerà sempre il mondo e il giocatore come sfondo.
+    public void draw(GamePanel panel, Graphics2D g) {
+        // Rendering gestito altrove (GamePanel)
     }
 
     @Override
     public void onEnter() {
-        System.out.println("Entrando in WorldState...");
-        // Qui potremmo, ad esempio, riattivare la musica del mondo di gioco.
+        log.info("Entrando in WorldState...");
+        // TODO: Riattivare musica del mondo
+        // AudioManager.play("overworld_theme");
     }
 
     @Override
     public void onExit() {
-        System.out.println("Uscendo da WorldState...");
-        // La riga "player.setMoving(false);" è stata rimossa perché obsoleta.
+        log.info("Uscendo da WorldState...");
+        // TODO: Fermare musica del mondo
+        // AudioManager.stop("overworld_theme");
     }
 }
