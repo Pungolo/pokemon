@@ -1,16 +1,10 @@
 package main;
 
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-
 import javax.swing.JPanel;
 
 import battle.BattleHandler;
@@ -19,14 +13,11 @@ import engine.LocalizationManager;
 import engine.models.ChoiceContext;
 import entities.Player;
 import entities.Pokemon;
-import ui.states.ChoiceState;
-import ui.states.IGameState;
-import ui.states.MainMenuState;
-import ui.states.PartyScreenState;
-import ui.states.SettingsMenuState;
-import ui.states.WorldState;
+import render.WorldRenderer;
+import ui.MessageManager;
+import ui.states.*;
 import world.WorldMap;
-import battle.BattleManager;
+
 
 public class GamePanel extends JPanel implements Runnable {
 
@@ -37,51 +28,61 @@ public class GamePanel extends JPanel implements Runnable {
     public static final int HEIGHT = TILE_SIZE * 12;
     public static final int FPS = 60;
 
-    // --- Componenti di Gioco ---
     private Player player;
     private WorldMap worldMap;
     private InputHandler input;
     private Thread gameThread;
-	private GameWindow window;
+    private GameWindow window;
 
-    // --- Gestione Stati ---
     private Map<GameState, IGameState> gameStates;
     private IGameState currentState;
 
-    // --- Gestione Cooldown ---
     private long lastMenuToggleTime = 0;
     private final long menuToogleCooldown = 200;
 
-    // --- Grafica ---
-    private int cameraX = 0, cameraY = 0;
+    private boolean inBattle = false;
+
     private BufferedImage tileSet;
     private BufferedImage[][] tiles;
     private int tileCols, tileRows;
-    
-    // --- Gestione Messaggi a Schermo ---
-    private String onScreenMessage = null;
-    private long messageSetTime = 0;
-    private final long MESSAGE_DISPLAY_DURATION = 2000; // 2 secondi
 
-
-    // --- Stato Battaglia ---
-    private boolean inBattle = false;
+    private final MessageManager messageManager = new MessageManager();
+    private final WorldRenderer worldRenderer = new WorldRenderer();
 
     public GamePanel(GameWindow window) {
-		this.window = window;
+        this.window = window;
         setPreferredSize(new Dimension(WIDTH * SCALE, HEIGHT * SCALE));
         setBackground(Color.BLACK);
         setFocusable(true);
 
         input = new InputHandler();
         addKeyListener(input);
+
         worldMap = new WorldMap(30, 20);
         player = new Player(4, 6, TILE_SIZE);
-        player.getParty().loadFromFile(); // Nuova chiamata per caricare
+        player.getParty().loadFromFile();
 
         loadGraphics();
         initializeStates();
         startGameLoop();
+    }
+
+    private void loadGraphics() {
+        tileSet = utils.SpriteLoader.load("../assets/sprites/tileset.png");
+        tileCols = tileSet.getWidth() / TILE_SIZE;
+        tileRows = tileSet.getHeight() / TILE_SIZE;
+        tiles = new BufferedImage[tileRows][tileCols];
+
+        for (int y = 0; y < tileRows; y++) {
+            for (int x = 0; x < tileCols; x++) {
+                tiles[y][x] = tileSet.getSubimage(
+                        x * TILE_SIZE, y * TILE_SIZE,
+                        TILE_SIZE, TILE_SIZE
+                );
+            }
+        }
+
+        worldRenderer.init(tiles, TILE_SIZE, SCALE, WIDTH, HEIGHT);
     }
 
     private void initializeStates() {
@@ -90,21 +91,9 @@ public class GamePanel extends JPanel implements Runnable {
         gameStates.put(GameState.MAIN_MENU, new MainMenuState());
         gameStates.put(GameState.SETTINGS_MENU, new SettingsMenuState());
         gameStates.put(GameState.PARTY_SCREEN, new PartyScreenState(player));
-        gameStates.put(GameState.CHOICE_BOX, new ChoiceState()); // Aggiungiamo il nuovo stato
-        
-        changeState(GameState.WORLD); // Impostiamo lo stato iniziale
-    }
-    
-    private void loadGraphics() {
-        tileSet = utils.SpriteLoader.load("../assets/sprites/tileset.png");
-        tileCols = tileSet.getWidth() / TILE_SIZE;
-        tileRows = tileSet.getHeight() / TILE_SIZE;
-        tiles = new BufferedImage[tileRows][tileCols];
-        for (int y = 0; y < tileRows; y++) {
-            for (int x = 0; x < tileCols; x++) {
-                tiles[y][x] = tileSet.getSubimage(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            }
-        }
+        gameStates.put(GameState.CHOICE_BOX, new ChoiceState());
+
+        changeState(GameState.WORLD);
     }
 
     public void startGameLoop() {
@@ -117,10 +106,12 @@ public class GamePanel extends JPanel implements Runnable {
         double drawInterval = 1_000_000_000.0 / FPS;
         double delta = 0;
         long lastTime = System.nanoTime();
+
         while (gameThread != null) {
             long currentTime = System.nanoTime();
             delta += (currentTime - lastTime) / drawInterval;
             lastTime = currentTime;
+
             if (delta >= 1) {
                 update();
                 repaint();
@@ -130,14 +121,11 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void update() {
-
-		if (inBattle) return;
-
-		if (currentState != null) {
-			currentState.update(this);
-		}
+        if (!inBattle && currentState != null) {
+            currentState.update(this);
+        }
     }
-    
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -145,73 +133,23 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void draw(Graphics2D g) {
-        drawWorld(g);
-        if (currentState != null) {
-            currentState.draw(this, g);
-        }
-
-        if (onScreenMessage != null) {
-            if (System.currentTimeMillis() - messageSetTime < MESSAGE_DISPLAY_DURATION) {
-                g.setColor(new Color(0, 0, 0, 200));
-                g.fillRoundRect(10, getHeight() - 50, getWidth() - 20, 40, 15, 15);
-                g.setColor(Color.WHITE);
-                g.setFont(new Font("Arial", Font.BOLD, 14));
-                FontMetrics fm = g.getFontMetrics();
-                int textWidth = fm.stringWidth(onScreenMessage);
-                g.drawString(onScreenMessage, getWidth() / 2 - textWidth / 2, getHeight() - 25);
-            } else {
-                onScreenMessage = null;
-            }
-        }
+        worldRenderer.drawWorld(g, worldMap, player);
+        if (currentState != null) currentState.draw(this, g);
+        messageManager.draw(g, getWidth(), getHeight());
     }
 
-    private void drawWorld(Graphics2D g) {
-        cameraX = player.x * TILE_SIZE * SCALE - (WIDTH * SCALE) / 2 + (TILE_SIZE * SCALE) / 2;
-        cameraY = player.y * TILE_SIZE * SCALE - (HEIGHT * SCALE) / 2 + (TILE_SIZE * SCALE) / 2;
-        g.translate(-cameraX, -cameraY);
-        for (int y = 0; y < worldMap.height; y++) {
-            for (int x = 0; x < worldMap.width; x++) {
-                drawTile(g, worldMap.getGroundTile(x, y), x, y);
-                drawTile(g, worldMap.getOverlayTile(x, y), x, y);
-            }
-        }
-        player.draw(g, SCALE);
-        g.translate(cameraX, cameraY);
-    }
+    public void goToBattle(long now) {
+        player.setLastMoveTime(now);
+        if (!worldMap.isGrassTile(player.x, player.y)) return;
 
-    private void drawTile(Graphics2D g, int tileId, int x, int y) {
-        if (tileId > 0) {
-            int id = tileId - 1;
-            int tileX = id % tileCols;
-            int tileY = id / tileCols;
-            g.drawImage(tiles[tileY][tileX], x * TILE_SIZE * SCALE, y * TILE_SIZE * SCALE, TILE_SIZE * SCALE, TILE_SIZE * SCALE, null);
+        if (Math.random() < 0.2) {
+            inBattle = true;
+            Pokemon wild = new Pokemon("Bulbasaur", 5, 10, 10, 10, 15);
+            Pokemon playerMon = player.getParty().getPokemon(0);
+            BattleHandler handler = new BattleHandler(window, this, player);
+            handler.startBattle(playerMon, wild);
         }
     }
-
-    // --- Metodi Pubblici per la Gestione degli Stati ---
-
-	public void goToBattle(long now) {
-
-		cameraX = player.x * TILE_SIZE * SCALE - WIDTH / 2;
-		cameraY = player.y * TILE_SIZE * SCALE - HEIGHT / 2;
-		player.setLastMoveTime(now);
-
-		if (worldMap.isGrassTile(player.x, player.y)) {
-
-			double pokemonEncounterChance = 0.2;
-			if (Math.random() < pokemonEncounterChance) {
-				inBattle = true;
-				Pokemon wildPokemon = new Pokemon("Bulbasaur", 5, 10, 10, 10, 15);
-				Pokemon playerPokemon = player.getParty().getPokemon(0); // Prende il primo Pokémon della squadra del giocatore
-				//BattleManager battleManager = new BattleManager(window, this, player);
-				//battleManager.startBattle(playerPokemon, wildPokemon);
-                BattleHandler handler = new BattleHandler(window, this, player);
-                handler.startBattle(playerPokemon, wildPokemon);
-
-			}
-		}
-
-	}
 
     public void changeState(GameState newStateKey) {
         if (currentState != null) currentState.onExit();
@@ -221,79 +159,61 @@ public class GamePanel extends JPanel implements Runnable {
             currentState.onEnter();
         }
     }
-    
+
     public void handleMainMenuSelection(String selectedOptionKey) {
         LocalizationManager lm = LocalizationManager.getInstance();
 
-        if (selectedOptionKey.equals(lm.getString("menu.pokemon"))) {
-            changeState(GameState.PARTY_SCREEN);
-        } else if (selectedOptionKey.equals(lm.getString("menu.save"))) {
-        	if (player.getParty().saveToFile()) {
-                displayOnScreenMessage(lm.getString("save.success"));
-            } else {
-                // Mostra un messaggio di errore
+        switch (selectedOptionKey) {
+            case "menu.pokemon" -> changeState(GameState.PARTY_SCREEN);
+            case "menu.save" -> {
+                if (player.getParty().saveToFile()) {
+                    messageManager.showMessage(lm.getString("save.success"));
+                }
+                changeState(GameState.WORLD);
             }
-            changeState(GameState.WORLD);
-        } else if (selectedOptionKey.equals(lm.getString("menu.settings"))) {
-            changeState(GameState.SETTINGS_MENU);
-        } else if (selectedOptionKey.equals(lm.getString("menu.exit"))) {
-            askToExitGame(); // Usiamo un metodo helper per la nuova logica
+            case "menu.settings" -> changeState(GameState.SETTINGS_MENU);
+            case "menu.exit" -> askToExitGame();
         }
     }
-    
+
     private void askToExitGame() {
         LocalizationManager lm = LocalizationManager.getInstance();
-        
-        // Definiamo le azioni per "Sì" e "No"
-        Runnable actionYes = () -> {
-            player.getParty().saveToFile(); // <-- QUESTA È LA CHIAMATA CORRETTA
+
+        Runnable saveAndExit = () -> {
+            player.getParty().saveToFile();
             System.exit(0);
         };
-        
-        Runnable actionNo = () -> {
-            // Se l'utente dice 'No', poniamo la seconda domanda
-            Runnable confirmYes = () -> System.exit(0);
-            Runnable confirmNo = () -> changeState(GameState.WORLD); // Torna al gioco
-            
-            ChoiceContext confirmContext = new ChoiceContext(
-                lm.getString("exit.confirm.nosave"),
-                List.of(lm.getString("choice.yes"), lm.getString("choice.no")),
-                List.of(confirmYes, confirmNo),
-                confirmNo // Annullare riporta al gioco
-            );
 
-            // Riconfiguriamo lo stato esistente con la nuova domanda.
-            // Non serve cambiare stato, perché siamo già in CHOICE_BOX.
-            ((ChoiceState) gameStates.get(GameState.CHOICE_BOX)).configure(confirmContext);
+        Runnable confirmExitNoSave = () -> {
+            ChoiceContext confirm = new ChoiceContext(
+                    lm.getString("exit.confirm.nosave"),
+                    List.of(lm.getString("choice.yes"), lm.getString("choice.no")),
+                    List.of(() -> System.exit(0), () -> changeState(GameState.WORLD)),
+                    () -> changeState(GameState.WORLD)
+            );
+            ((ChoiceState) gameStates.get(GameState.CHOICE_BOX)).configure(confirm);
         };
-        
-        // Creiamo e configuriamo il primo box di scelta
+
         ChoiceContext context = new ChoiceContext(
-            lm.getString("exit.confirm.save"),
-            List.of(lm.getString("choice.yes"), lm.getString("choice.no")),
-            List.of(actionYes, actionNo),
-            () -> changeState(GameState.WORLD) // Se l'utente annulla, torna al mondo
+                lm.getString("exit.confirm.save"),
+                List.of(lm.getString("choice.yes"), lm.getString("choice.no")),
+                List.of(saveAndExit, confirmExitNoSave),
+                () -> changeState(GameState.WORLD)
         );
 
         ((ChoiceState) gameStates.get(GameState.CHOICE_BOX)).configure(context);
         changeState(GameState.CHOICE_BOX);
-    }    
-    
-    // --- Helper per messaggi ---
+    }
+
+    // Utility
     public void displayOnScreenMessage(String message) {
-        this.onScreenMessage = message;
-        this.messageSetTime = System.currentTimeMillis();
+        messageManager.showMessage(message);
     }
 
-    // --- Getters per permettere agli stati di accedere a dati/oggetti globali ---
-
-    public InputHandler getInput() { return this.input; }
-    public long getLastMenuToggleTime() { return this.lastMenuToggleTime; }
-    public long getMenuToggleCooldown() { return this.menuToogleCooldown; }
-    public Player getPlayer() { return this.player; }
-    public void setInBattle(boolean inBattle) { this.inBattle = inBattle; }
-    
-    public void resetInput() {
-        this.input.reset();
-    }
+    public InputHandler getInput() { return input; }
+    public long getLastMenuToggleTime() { return lastMenuToggleTime; }
+    public long getMenuToggleCooldown() { return menuToogleCooldown; }
+    public Player getPlayer() { return player; }
+    public void setInBattle(boolean b) { inBattle = b; }
+    public void resetInput() { input.reset(); }
 }
