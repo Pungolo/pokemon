@@ -13,6 +13,7 @@ import java.util.Map;
 
 import javax.swing.JPanel;
 
+import battle.BattleHandler;
 import engine.InputHandler;
 import engine.LocalizationManager;
 import engine.models.ChoiceContext;
@@ -107,7 +108,7 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     public void startGameLoop() {
-gameThread = new Thread(this);
+        gameThread = new Thread(this);
         gameThread.start();
     }
 
@@ -202,8 +203,10 @@ gameThread = new Thread(this);
 				inBattle = true;
 				Pokemon wildPokemon = new Pokemon("Bulbasaur", 5, 10, 10, 10, 15);
 				Pokemon playerPokemon = player.getParty().getPokemon(0); // Prende il primo Pokémon della squadra del giocatore
-				BattleManager battleManager = new BattleManager(window, this, player);
-				battleManager.startBattle(playerPokemon, wildPokemon);
+				//BattleManager battleManager = new BattleManager(window, this, player);
+				//battleManager.startBattle(playerPokemon, wildPokemon);
+                BattleHandler handler = new BattleHandler(window, this, player);
+                handler.startBattle(playerPokemon, wildPokemon);
 
 			}
 		}
